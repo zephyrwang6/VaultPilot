@@ -1,9 +1,18 @@
 // VaultPilot types
 
+export type AgentType = 'claude-code' | 'openclaw';
+
 export interface VaultConfig {
     vaultPath: string;
     boundAt: string; // ISO date
+    agentType: AgentType;
     panels?: PanelConfig[];
+}
+
+export interface ChatMessage {
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp: string;
 }
 
 export interface PanelConfig {

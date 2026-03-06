@@ -1,22 +1,31 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Folder, ChevronDown, ChevronRight, ExternalLink, Wand2, Eye, FolderOpen, Terminal, Copy, Check } from 'lucide-react';
-import type { VaultFolder } from '@/lib/types';
+import { Folder, ChevronDown, ChevronRight, ExternalLink, Wand2, Eye, FolderOpen, Terminal, Copy, Check, Send } from 'lucide-react';
+import type { AgentType, VaultFolder } from '@/lib/types';
 import { FolderAnalysisModal } from './FolderAnalysisModal';
 
 interface FoldersPanelProps {
     vaultPath: string;
+    agentType: AgentType;
 }
 
 type ModalType = 'overview' | 'content' | 'review' | 'log';
 
-function launchClaude(command: string) {
-    fetch('/api/claude', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command }),
-    });
+function launchAgent(command: string, agentType: AgentType) {
+    if (agentType === 'openclaw') {
+        fetch('/api/openclaw', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: command }),
+        });
+    } else {
+        fetch('/api/claude', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command }),
+        });
+    }
 }
 
 function openInFinder(path: string) {
@@ -35,11 +44,13 @@ function openInTerminal(path: string) {
     });
 }
 
-export function FoldersPanel({ vaultPath }: FoldersPanelProps) {
+export function FoldersPanel({ vaultPath, agentType }: FoldersPanelProps) {
     const [structure, setStructure] = useState<VaultFolder[]>([]);
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
     const [modal, setModal] = useState<{ type: ModalType; path: string; name: string } | null>(null);
     const [copied, setCopied] = useState<string | null>(null);
+
+    const isOpenClaw = agentType === 'openclaw';
 
     const copyPath = (path: string) => {
         navigator.clipboard.writeText(path);
@@ -64,7 +75,6 @@ export function FoldersPanel({ vaultPath }: FoldersPanelProps) {
         setModal({ type, path: folder.path, name: folder.name });
     };
 
-    // Per-folder action buttons
     const folderActions = (folder: VaultFolder) => [
         { label: '📊 总览分析', type: 'overview' as ModalType },
         { label: '📝 创作模块', type: 'content' as ModalType },
@@ -72,7 +82,6 @@ export function FoldersPanel({ vaultPath }: FoldersPanelProps) {
         { label: '📋 日志模块', type: 'log' as ModalType },
     ];
 
-    // Global commands — each creates exactly ONE panel
     const globalActions = [
         {
             label: '创建总览导航',
@@ -112,7 +121,6 @@ export function FoldersPanel({ vaultPath }: FoldersPanelProps) {
                     <Folder className="h-4 w-4 text-violet-400 shrink-0" />
                     <span className="text-sm flex-1 truncate">{folder.name}</span>
                     <span className="text-[10px] text-muted-foreground mr-1">{folder.fileCount} 项</span>
-                    {/* Utility buttons (hover) */}
                     <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-all">
                         {[
                             { icon: FolderOpen, label: '访达', color: 'hover:text-blue-400 hover:bg-blue-500/10', onClick: () => openInFinder(folder.path) },
@@ -132,7 +140,6 @@ export function FoldersPanel({ vaultPath }: FoldersPanelProps) {
                     </div>
                 </div>
 
-                {/* Folder actions (when expanded) */}
                 {isExpanded && (
                     <div className="ml-12 mb-2 space-y-0.5">
                         {folderActions(folder).map((a) => (
@@ -145,7 +152,6 @@ export function FoldersPanel({ vaultPath }: FoldersPanelProps) {
                                 <Eye className="h-3 w-3 ml-auto shrink-0 opacity-0 group-hover/action:opacity-100 transition-opacity" />
                             </button>
                         ))}
-                        {/* Sub-folders */}
                         {folder.children.map(c => renderFolder(c, depth + 1))}
                     </div>
                 )}
@@ -156,23 +162,28 @@ export function FoldersPanel({ vaultPath }: FoldersPanelProps) {
     return (
         <>
             <div className="space-y-5 stagger-children">
-                {/* Quick Actions → Claude Code */}
+                {/* Quick Actions */}
                 <div className="glass-card rounded-2xl p-5">
                     <div className="flex items-center gap-2 mb-4">
                         <Wand2 className="h-4 w-4 text-violet-400" />
                         <span className="text-sm font-medium">快捷指令</span>
-                        <span className="text-[10px] text-muted-foreground ml-auto">发送到 Claude Code</span>
+                        <span className="text-[10px] text-muted-foreground ml-auto">
+                            发送到 {isOpenClaw ? 'OpenClaw' : 'Claude Code'}
+                        </span>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                         {globalActions.map((a) => (
                             <button
                                 key={a.label}
-                                onClick={() => launchClaude(a.cmd)}
+                                onClick={() => launchAgent(a.cmd, agentType)}
                                 className="action-btn py-3 text-left gap-3"
                             >
                                 <span className="text-lg">{a.icon}</span>
                                 <span className="text-xs flex-1">{a.label}</span>
-                                <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0" />
+                                {isOpenClaw
+                                    ? <Send className="h-3 w-3 text-muted-foreground shrink-0" />
+                                    : <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0" />
+                                }
                             </button>
                         ))}
                     </div>
@@ -194,7 +205,6 @@ export function FoldersPanel({ vaultPath }: FoldersPanelProps) {
                 </div>
             </div>
 
-            {/* Analysis Modal */}
             {modal && (
                 <FolderAnalysisModal
                     type={modal.type}

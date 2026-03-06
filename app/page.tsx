@@ -2,40 +2,41 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Bot, ChevronLeft, ChevronRight, Sun, Moon, Zap, FolderOpen, BarChart3, LayoutDashboard, Plus, ListTodo,
+  Bot, ChevronLeft, ChevronRight, Sun, Moon, Zap, FolderOpen, BarChart3, Plus, MessageSquare,
+  LayoutDashboard,
 } from 'lucide-react';
 import { Onboarding } from './components/Onboarding';
-import { OverviewPanel } from './components/OverviewPanel';
 import { AgentPanel } from './components/AgentPanel';
 import { FoldersPanel } from './components/FoldersPanel';
 import { UsagePanel } from './components/UsagePanel';
+import { OverviewPanel } from './components/OverviewPanel';
 import { DynamicPanel } from './components/DynamicPanel';
-import { TodoPanel } from './components/TodoPanel';
 import { NewNavModal } from './components/NewNavModal';
-import type { VaultConfig, PanelConfig } from '@/lib/types';
+import type { AgentType, VaultConfig, PanelConfig } from '@/lib/types';
 
 // Icon mapping for dynamic panels
 const iconMap: Record<string, any> = {
-  Bot, FolderOpen, BarChart3, Zap, LayoutDashboard,
+  Bot, FolderOpen, BarChart3, Zap, MessageSquare,
 };
-
-// Default nav items (built-in)
-const defaultNavItems = [
-  { id: 'overview', label: '总览', icon: LayoutDashboard },
-  { id: 'agent', label: 'Agent', icon: Bot },
-  { id: 'folders', label: '文件夹', icon: FolderOpen },
-  { id: 'usage', label: '用量分析', icon: BarChart3 },
-  { id: 'todos', label: '待办', icon: ListTodo },
-];
 
 export default function Home() {
   const [config, setConfig] = useState<VaultConfig | null>(null);
-  const [claudeMd, setClaudeMd] = useState('');
+  const [agentMd, setAgentMd] = useState('');
   const [loading, setLoading] = useState(true);
   const [activePanel, setActivePanel] = useState('agent');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isDark, setIsDark] = useState(true);
   const [showNewNavModal, setShowNewNavModal] = useState(false);
+
+  const agentType: AgentType = config?.agentType || 'claude-code';
+  const isOpenClaw = agentType === 'openclaw';
+
+  // Default nav items (built-in core only)
+  const defaultNavItems = [
+    { id: 'agent', label: isOpenClaw ? 'OpenClaw' : 'Agent', icon: isOpenClaw ? MessageSquare : Bot },
+    { id: 'folders', label: '文件夹', icon: FolderOpen },
+    { id: 'usage', label: '用量分析', icon: BarChart3 },
+  ];
 
   // Load config on mount
   useEffect(() => {
@@ -44,7 +45,7 @@ export default function Home() {
       .then(data => {
         if (data.config?.vaultPath) {
           setConfig(data.config);
-          setClaudeMd(data.claudeMd || '');
+          setAgentMd(data.agentMd || data.claudeMd || '');
         }
         setLoading(false);
       })
@@ -57,17 +58,17 @@ export default function Home() {
     document.documentElement.classList.toggle('dark', next);
   };
 
-  const handleVaultBound = (vaultPath: string) => {
-    setConfig({ vaultPath, boundAt: new Date().toISOString(), panels: [] });
+  const handleVaultBound = (vaultPath: string, boundAgentType: AgentType = 'claude-code') => {
+    setConfig({ vaultPath, boundAt: new Date().toISOString(), agentType: boundAgentType, panels: [] });
     fetch('/api/config')
       .then(r => r.json())
-      .then(data => setClaudeMd(data.claudeMd || ''))
+      .then(data => setAgentMd(data.agentMd || data.claudeMd || ''))
       .catch(() => { });
   };
 
   const handleRebind = () => {
     setConfig(null);
-    setClaudeMd('');
+    setAgentMd('');
     setActivePanel('agent');
   };
 
@@ -111,21 +112,17 @@ export default function Home() {
   // Render panel content
   const renderPanel = () => {
     switch (activePanel) {
-      case 'overview':
-        return <OverviewPanel vaultPath={config.vaultPath} />;
       case 'agent':
-        return <AgentPanel vaultPath={config.vaultPath} claudeMd={claudeMd} onRebind={handleRebind} />;
+        return <AgentPanel vaultPath={config.vaultPath} agentMd={agentMd} agentType={agentType} onRebind={handleRebind} />;
       case 'folders':
-        return <FoldersPanel vaultPath={config.vaultPath} />;
+        return <FoldersPanel vaultPath={config.vaultPath} agentType={agentType} />;
       case 'usage':
-        return <UsagePanel />;
-      case 'todos':
-        return <TodoPanel />;
+        return <UsagePanel agentType={agentType} />;
       default:
         if (activePanelConfig) {
           return <DynamicPanel panel={activePanelConfig} vaultPath={config.vaultPath} />;
         }
-        return <AgentPanel vaultPath={config.vaultPath} claudeMd={claudeMd} onRebind={handleRebind} />;
+        return <AgentPanel vaultPath={config.vaultPath} agentMd={agentMd} agentType={agentType} onRebind={handleRebind} />;
     }
   };
 
@@ -177,16 +174,25 @@ export default function Home() {
             </button>
           </nav>
 
-          {/* Bottom: vault info + collapse */}
+          {/* Bottom: vault info + agent type + collapse */}
           <div className="p-3 border-t border-border/50 space-y-2">
             {!sidebarCollapsed && (
-              <div className="px-3 py-2 rounded-lg bg-secondary/30 text-[10px] text-muted-foreground truncate" title={config.vaultPath}>
-                📁 {config.vaultPath.split('/').pop()}
+              <div className="px-3 py-2 rounded-lg bg-secondary/30 text-[10px] text-muted-foreground space-y-1">
+                <div className="flex items-center gap-1">
+                  <span>{isOpenClaw ? '🐾' : '🤖'}</span>
+                  <span>{isOpenClaw ? 'OpenClaw' : 'Claude Code'}</span>
+                </div>
+                <div className="truncate" title={config.vaultPath}>
+                  📁 {config.vaultPath.split('/').pop()}
+                </div>
               </div>
             )}
             <div className="flex items-center justify-between px-1">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white text-xs font-bold">
-                V
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold ${isOpenClaw
+                ? 'bg-gradient-to-br from-emerald-600 to-teal-600'
+                : 'bg-gradient-to-br from-violet-600 to-indigo-600'
+                }`}>
+                {isOpenClaw ? 'O' : 'V'}
               </div>
               <button
                 onClick={() => setSidebarCollapsed(!sidebarCollapsed)}

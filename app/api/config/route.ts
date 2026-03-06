@@ -4,7 +4,7 @@ import path from 'path';
 
 const CONFIG_PATH = path.join(process.cwd(), 'vault-pilot.config.json');
 
-// GET: read config + .claude.md
+// GET: read config + agent markdown
 export async function GET() {
     try {
         let config = null;
@@ -15,20 +15,24 @@ export async function GET() {
             // No config yet
         }
 
-        // Read .claude.md or CLAUDE.md from vault if bound
-        let claudeMd = '';
+        let agentMd = '';
         if (config?.vaultPath) {
-            for (const name of ['CLAUDE.md', '.claude.md', 'claude.md']) {
+            const agentType = config.agentType || 'claude-code';
+            const mdFiles = agentType === 'openclaw'
+                ? ['AGENTS.md', 'openclaw.md', 'CLAUDE.md', '.claude.md', 'claude.md']
+                : ['CLAUDE.md', '.claude.md', 'claude.md'];
+
+            for (const name of mdFiles) {
                 try {
-                    claudeMd = await fs.readFile(path.join(config.vaultPath, name), 'utf-8');
+                    agentMd = await fs.readFile(path.join(config.vaultPath, name), 'utf-8');
                     break;
                 } catch { /* try next */ }
             }
         }
 
-        return NextResponse.json({ config, claudeMd });
+        return NextResponse.json({ config, agentMd, claudeMd: agentMd });
     } catch (error) {
-        return NextResponse.json({ config: null, claudeMd: '' });
+        return NextResponse.json({ config: null, agentMd: '', claudeMd: '' });
     }
 }
 
@@ -36,11 +40,19 @@ export async function GET() {
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { action, vaultPath, panels } = body;
+        const { action, vaultPath, agentType, panels } = body;
 
         if (action === 'bind-vault') {
             if (!vaultPath) return NextResponse.json({ error: 'vaultPath required' }, { status: 400 });
-            // Verify path exists
+
+            if (body.createIfMissing) {
+                try {
+                    await fs.mkdir(vaultPath, { recursive: true });
+                } catch {
+                    return NextResponse.json({ error: 'Failed to create directory' }, { status: 500 });
+                }
+            }
+
             try {
                 await fs.access(vaultPath);
             } catch {
@@ -50,6 +62,7 @@ export async function POST(request: NextRequest) {
             const config = {
                 vaultPath,
                 boundAt: new Date().toISOString(),
+                agentType: agentType || 'claude-code',
                 panels: [],
             };
             await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2));

@@ -1,7 +1,10 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import fs from 'fs/promises';
 import path from 'path';
 
+const execFileAsync = promisify(execFile);
 const SKILLS_PATH = path.join(process.env.HOME || '/Users/ugreen', '.claude', 'skills');
 
 function parseFrontmatter(content: string): { name: string; description: string } {
@@ -34,26 +37,50 @@ function guessCategory(name: string, desc: string): string {
     return '其他';
 }
 
-export async function GET() {
+async function getClaudeSkills() {
+    const entries = await fs.readdir(SKILLS_PATH, { withFileTypes: true });
+    const skills = [];
+    for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        try {
+            const content = await fs.readFile(path.join(SKILLS_PATH, entry.name, 'SKILL.md'), 'utf-8');
+            const { name, description } = parseFrontmatter(content);
+            if (name || description) {
+                skills.push({
+                    name: name || entry.name,
+                    description: description || '',
+                    category: guessCategory(name || entry.name, description),
+                    path: entry.name,
+                });
+            }
+        } catch { /* skip */ }
+    }
+    skills.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+    return skills;
+}
+
+async function getOpenClawSkills() {
     try {
-        const entries = await fs.readdir(SKILLS_PATH, { withFileTypes: true });
-        const skills = [];
-        for (const entry of entries) {
-            if (!entry.isDirectory()) continue;
-            try {
-                const content = await fs.readFile(path.join(SKILLS_PATH, entry.name, 'SKILL.md'), 'utf-8');
-                const { name, description } = parseFrontmatter(content);
-                if (name || description) {
-                    skills.push({
-                        name: name || entry.name,
-                        description: description || '',
-                        category: guessCategory(name || entry.name, description),
-                        path: entry.name,
-                    });
-                }
-            } catch { /* skip */ }
-        }
-        skills.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+        const { stdout } = await execFileAsync('openclaw', ['agents', 'list', '--json'], { timeout: 15_000 });
+        const agents = JSON.parse(stdout);
+        return (Array.isArray(agents) ? agents : []).map((a: any) => ({
+            name: a.name || a.id || 'unknown',
+            description: a.description || '',
+            category: a.category || 'Agent',
+            path: a.id || a.name || '',
+        }));
+    } catch {
+        return [];
+    }
+}
+
+export async function GET(request: NextRequest) {
+    const agent = request.nextUrl.searchParams.get('agent') || 'claude-code';
+
+    try {
+        const skills = agent === 'openclaw'
+            ? await getOpenClawSkills()
+            : await getClaudeSkills();
         return NextResponse.json(skills);
     } catch {
         return NextResponse.json([]);
