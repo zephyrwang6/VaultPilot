@@ -1,12 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Folder, ChevronDown, ChevronRight, ExternalLink, Terminal, Wand2 } from 'lucide-react';
+import { Folder, ChevronDown, ChevronRight, ExternalLink, Wand2, Eye, FolderOpen, Terminal, Copy, Check } from 'lucide-react';
 import type { VaultFolder } from '@/lib/types';
+import { FolderAnalysisModal } from './FolderAnalysisModal';
 
 interface FoldersPanelProps {
     vaultPath: string;
 }
+
+type ModalType = 'overview' | 'content' | 'review' | 'log';
 
 function launchClaude(command: string) {
     fetch('/api/claude', {
@@ -16,9 +19,33 @@ function launchClaude(command: string) {
     });
 }
 
+function openInFinder(path: string) {
+    fetch('/api/open-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, action: 'finder' }),
+    });
+}
+
+function openInTerminal(path: string) {
+    fetch('/api/open-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, action: 'terminal' }),
+    });
+}
+
 export function FoldersPanel({ vaultPath }: FoldersPanelProps) {
     const [structure, setStructure] = useState<VaultFolder[]>([]);
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
+    const [modal, setModal] = useState<{ type: ModalType; path: string; name: string } | null>(null);
+    const [copied, setCopied] = useState<string | null>(null);
+
+    const copyPath = (path: string) => {
+        navigator.clipboard.writeText(path);
+        setCopied(path);
+        setTimeout(() => setCopied(null), 1500);
+    };
 
     useEffect(() => {
         fetch('/api/vault')
@@ -33,20 +60,40 @@ export function FoldersPanel({ vaultPath }: FoldersPanelProps) {
         setExpanded(next);
     };
 
-    // Generate action commands for a folder
+    const openModal = (type: ModalType, folder: VaultFolder) => {
+        setModal({ type, path: folder.path, name: folder.name });
+    };
+
+    // Per-folder action buttons
     const folderActions = (folder: VaultFolder) => [
-        { label: '📊 创建总览分析', cmd: `请分析 "${folder.name}" 文件夹的内容结构，生成一份总览分析报告` },
-        { label: '📝 创建创作模块', cmd: `根据 "${folder.name}" 文件夹的内容，帮我在 VaultPilot 中创建一个创作模块面板` },
-        { label: '🔄 创建复盘模块', cmd: `根据 "${folder.name}" 文件夹为我创建一个复盘模块，分析内容产出和完成情况` },
-        { label: '📋 创建日志模块', cmd: `为 "${folder.name}" 文件夹创建一个日志模块，记录文件变动和内容更新` },
+        { label: '📊 总览分析', type: 'overview' as ModalType },
+        { label: '📝 创作模块', type: 'content' as ModalType },
+        { label: '🔄 复盘模块', type: 'review' as ModalType },
+        { label: '📋 日志模块', type: 'log' as ModalType },
     ];
 
-    // Global commands
+    // Global commands — each creates exactly ONE panel
     const globalActions = [
-        { label: '为所有文件夹创建总览分析', cmd: '请分析整个 Obsidian Vault 的文件夹结构，为每个文件夹生成简要总览分析报告', icon: '📊' },
-        { label: '生成左侧导航面板配置', cmd: '分析我的 Obsidian 文件夹结构，为我生成 VaultPilot 的左侧导航面板配置，每个重要文件夹对应一个面板', icon: '🧭' },
-        { label: '分析文件夹内容变动', cmd: '分析最近 7 天我的 Obsidian Vault 中哪些文件夹有内容变动，列出新增和修改的文件', icon: '📋' },
-        { label: '制定本周工作计划', cmd: '基于我的 Obsidian 文件夹结构和已有内容，帮我制定本周工作计划', icon: '📅' },
+        {
+            label: '创建总览导航',
+            cmd: '使用 meridian Skill。一次只创建一个面板。参考 05 工具箱/obsidian-dashboard/my-app/app/components/desktop/OverviewPanel.tsx 的设计风格，在 05 工具箱/vault-pilot/app/components/ 下创建 OverviewPanel.tsx，用于分析所有文件夹的数据概况：各文件夹文件数和大小统计、最近修改的文件、本周活跃度。使用 Meridian 的 glass-card 样式。在 page.tsx 中注册为左侧导航项「总览」。',
+            icon: '📊',
+        },
+        {
+            label: '创建内容创作导航',
+            cmd: '使用 meridian Skill。一次只创建一个面板。参考 05 工具箱/obsidian-dashboard/my-app/app/components/desktop/ContentPanel.tsx 的设计风格，在 05 工具箱/vault-pilot/app/components/ 下创建 ContentPanel.tsx，读取 01 内容创作/ 下的独立文章和专栏文章列表（从文件名提取标题和日期），展示文章数量统计和最近文章。使用 Meridian 的 glass-card 样式。在 page.tsx 中注册为左侧导航项「创作」。',
+            icon: '📝',
+        },
+        {
+            label: '创建计划导航',
+            cmd: '使用 meridian Skill。一次只创建一个面板。参考 05 工具箱/obsidian-dashboard/my-app/app/components/desktop/GoalsPanel.tsx 的设计风格，在 05 工具箱/vault-pilot/app/components/ 下创建 PlanningPanel.tsx，读取 06 计划/ 下的周计划和每日记录（daily_log.jsonl），展示本周计划内容和每日完成情况。使用 Meridian 的 glass-card 样式。在 page.tsx 中注册为左侧导航项「计划」。',
+            icon: '📅',
+        },
+        {
+            label: '创建复盘导航',
+            cmd: '使用 meridian Skill。一次只创建一个面板。参考 05 工具箱/obsidian-dashboard/my-app/app/components/desktop/ReviewPanel.tsx 的设计风格，在 05 工具箱/vault-pilot/app/components/ 下创建 ReviewPanel.tsx，读取 06 计划/05 周复盘/ 和 goals_tracker.jsonl，展示本周产出统计（文章/视频/动态的进度条）和最近的复盘报告。使用 Meridian 的 glass-card 样式。在 page.tsx 中注册为左侧导航项「复盘」。',
+            icon: '🔄',
+        },
     ];
 
     const renderFolder = (folder: VaultFolder, depth = 0) => {
@@ -58,26 +105,44 @@ export function FoldersPanel({ vaultPath }: FoldersPanelProps) {
                     style={{ paddingLeft: 8 + depth * 16 }}
                 >
                     <button onClick={() => toggle(folder.path)} className="shrink-0">
-                        {folder.children.length > 0 ? (
+                        {folder.children.length > 0 || true ? (
                             isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
                         ) : <span className="w-3.5" />}
                     </button>
                     <Folder className="h-4 w-4 text-violet-400 shrink-0" />
                     <span className="text-sm flex-1 truncate">{folder.name}</span>
-                    <span className="text-[10px] text-muted-foreground">{folder.fileCount} 项</span>
+                    <span className="text-[10px] text-muted-foreground mr-1">{folder.fileCount} 项</span>
+                    {/* Utility buttons (hover) */}
+                    <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-all">
+                        {[
+                            { icon: FolderOpen, label: '访达', color: 'hover:text-blue-400 hover:bg-blue-500/10', onClick: () => openInFinder(folder.path) },
+                            { icon: Terminal, label: '终端', color: 'hover:text-emerald-400 hover:bg-emerald-500/10', onClick: () => openInTerminal(folder.path) },
+                            { icon: copied === folder.path ? Check : Copy, label: copied === folder.path ? '已复制' : '复制', color: copied === folder.path ? 'text-emerald-400 bg-emerald-500/10' : 'hover:text-amber-400 hover:bg-amber-500/10', onClick: () => copyPath(folder.path) },
+                            { icon: Eye, label: '分析', color: 'hover:text-violet-400 hover:bg-violet-500/10', onClick: () => openModal('overview', folder) },
+                        ].map(btn => (
+                            <button
+                                key={btn.label}
+                                onClick={(e) => { e.stopPropagation(); btn.onClick(); }}
+                                className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md text-muted-foreground transition-colors text-[10px] ${btn.color}`}
+                            >
+                                <btn.icon className="h-3 w-3" />
+                                <span>{btn.label}</span>
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Folder actions (when expanded) */}
                 {isExpanded && (
-                    <div className="ml-12 mb-2 space-y-1">
+                    <div className="ml-12 mb-2 space-y-0.5">
                         {folderActions(folder).map((a) => (
                             <button
                                 key={a.label}
-                                onClick={() => launchClaude(a.cmd)}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] text-muted-foreground hover:text-foreground hover:bg-secondary/30 transition-colors text-left"
+                                onClick={() => openModal(a.type, folder)}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] text-muted-foreground hover:text-foreground hover:bg-secondary/30 transition-colors text-left group/action"
                             >
                                 <span>{a.label}</span>
-                                <ExternalLink className="h-3 w-3 ml-auto shrink-0 opacity-0 group-hover:opacity-100" />
+                                <Eye className="h-3 w-3 ml-auto shrink-0 opacity-0 group-hover/action:opacity-100 transition-opacity" />
                             </button>
                         ))}
                         {/* Sub-folders */}
@@ -89,41 +154,55 @@ export function FoldersPanel({ vaultPath }: FoldersPanelProps) {
     };
 
     return (
-        <div className="space-y-5 stagger-children">
-            {/* Quick Actions */}
-            <div className="glass-card rounded-2xl p-5">
-                <div className="flex items-center gap-2 mb-4">
-                    <Wand2 className="h-4 w-4 text-violet-400" />
-                    <span className="text-sm font-medium">快捷指令</span>
-                    <span className="text-[10px] text-muted-foreground ml-auto">发送到 Claude Code</span>
+        <>
+            <div className="space-y-5 stagger-children">
+                {/* Quick Actions → Claude Code */}
+                <div className="glass-card rounded-2xl p-5">
+                    <div className="flex items-center gap-2 mb-4">
+                        <Wand2 className="h-4 w-4 text-violet-400" />
+                        <span className="text-sm font-medium">快捷指令</span>
+                        <span className="text-[10px] text-muted-foreground ml-auto">发送到 Claude Code</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {globalActions.map((a) => (
+                            <button
+                                key={a.label}
+                                onClick={() => launchClaude(a.cmd)}
+                                className="action-btn py-3 text-left gap-3"
+                            >
+                                <span className="text-lg">{a.icon}</span>
+                                <span className="text-xs flex-1">{a.label}</span>
+                                <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0" />
+                            </button>
+                        ))}
+                    </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {globalActions.map((a) => (
-                        <button
-                            key={a.label}
-                            onClick={() => launchClaude(a.cmd)}
-                            className="action-btn py-3 text-left gap-3"
-                        >
-                            <span className="text-lg">{a.icon}</span>
-                            <span className="text-xs flex-1">{a.label}</span>
-                            <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0" />
-                        </button>
-                    ))}
+
+                {/* Folder Tree */}
+                <div className="glass-card rounded-2xl p-5">
+                    <div className="flex items-center gap-2 mb-3">
+                        <Folder className="h-4 w-4 text-violet-400" />
+                        <span className="text-sm font-medium">Vault 文件夹</span>
+                        <span className="text-xs text-muted-foreground ml-auto">{structure.length} 个顶层目录</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mb-3">
+                        展开文件夹查看分析模块 · 悬停显示 <Eye className="inline h-3 w-3" /> 快速查看分析
+                    </p>
+                    <div className="max-h-[500px] overflow-y-auto">
+                        {structure.map(f => renderFolder(f))}
+                    </div>
                 </div>
             </div>
 
-            {/* Folder Tree */}
-            <div className="glass-card rounded-2xl p-5">
-                <div className="flex items-center gap-2 mb-3">
-                    <Folder className="h-4 w-4 text-violet-400" />
-                    <span className="text-sm font-medium">Vault 文件夹</span>
-                    <span className="text-xs text-muted-foreground ml-auto">{structure.length} 个顶层目录</span>
-                </div>
-                <p className="text-[10px] text-muted-foreground mb-3">展开文件夹查看操作指令，点击后将在终端中打开 Claude Code 执行</p>
-                <div className="max-h-[500px] overflow-y-auto">
-                    {structure.map(f => renderFolder(f))}
-                </div>
-            </div>
-        </div>
+            {/* Analysis Modal */}
+            {modal && (
+                <FolderAnalysisModal
+                    type={modal.type}
+                    folderPath={modal.path}
+                    folderName={modal.name}
+                    onClose={() => setModal(null)}
+                />
+            )}
+        </>
     );
 }

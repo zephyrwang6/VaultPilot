@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "VaultPilot — Obsidian AI 驾驶舱",
+  title: "Meridian — Obsidian AI 驾驶舱",
   description: "连接 Obsidian 知识库与 Claude Code 的可视化驾驶舱",
 };
 

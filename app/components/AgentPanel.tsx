@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Terminal, ExternalLink, Sparkles, ChevronDown, ChevronRight, Folder, FileText, BookOpen, Loader2 } from 'lucide-react';
-import type { SkillInfo, VaultFolder } from '@/lib/types';
+import { useState } from 'react';
+import { Terminal, ExternalLink, Sparkles, ChevronDown, ChevronRight, BookOpen, Loader2, RefreshCw } from 'lucide-react';
+import type { SkillInfo } from '@/lib/types';
 import ReactMarkdown from 'react-markdown';
 
 interface AgentPanelProps {
     vaultPath: string;
     claudeMd: string;
+    onRebind: () => void;
 }
 
 const categoryColors: Record<string, string> = {
@@ -25,7 +26,7 @@ function groupByCategory(skills: SkillInfo[]) {
 
 // ─── Sub-Components ───
 
-function CommandInput({ vaultPath }: { vaultPath: string }) {
+function CommandInput({ vaultPath, onRebind }: { vaultPath: string; onRebind: () => void }) {
     const [command, setCommand] = useState('');
 
     const handleExecute = async () => {
@@ -38,7 +39,6 @@ function CommandInput({ vaultPath }: { vaultPath: string }) {
         setCommand('');
     };
 
-    // Guided prompt suggestions
     const prompts = [
         '帮我分析这个 Obsidian 文件夹结构，生成看板面板配置',
         '列出最近修改的 5 个文件',
@@ -73,8 +73,8 @@ function CommandInput({ vaultPath }: { vaultPath: string }) {
                     打开终端
                 </button>
             </div>
-            {/* Guided prompts */}
-            <div className="mt-3 flex flex-wrap gap-1.5">
+            {/* Guided prompts + rebind */}
+            <div className="mt-3 flex items-center gap-1.5 flex-wrap">
                 {prompts.map((p) => (
                     <button
                         key={p}
@@ -84,6 +84,13 @@ function CommandInput({ vaultPath }: { vaultPath: string }) {
                         {p.length > 20 ? p.slice(0, 20) + '...' : p}
                     </button>
                 ))}
+                <button
+                    onClick={onRebind}
+                    className="text-[10px] px-2 py-1 rounded-lg bg-secondary/40 text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1 ml-auto"
+                >
+                    <RefreshCw className="h-3 w-3" />
+                    重新绑定
+                </button>
             </div>
         </div>
     );
@@ -177,70 +184,13 @@ function SkillsLibrary() {
     );
 }
 
-function VaultStructure({ vaultPath }: { vaultPath: string }) {
-    const [structure, setStructure] = useState<VaultFolder[]>([]);
-    const [loaded, setLoaded] = useState(false);
-    const [expanded, setExpanded] = useState<Set<string>>(new Set());
-
-    useEffect(() => {
-        fetch('/api/vault')
-            .then(r => r.json())
-            .then(data => { if (data.structure) { setStructure(data.structure); setLoaded(true); } })
-            .catch(() => { });
-    }, [vaultPath]);
-
-    const toggle = (path: string) => {
-        const next = new Set(expanded);
-        next.has(path) ? next.delete(path) : next.add(path);
-        setExpanded(next);
-    };
-
-    const renderFolder = (folder: VaultFolder, depth = 0) => (
-        <div key={folder.path} style={{ paddingLeft: depth * 16 }}>
-            <button
-                onClick={() => toggle(folder.path)}
-                className="flex items-center gap-2 py-1 w-full text-left hover:text-foreground transition-colors text-muted-foreground"
-            >
-                {folder.children.length > 0 ? (
-                    expanded.has(folder.path) ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />
-                ) : <span className="w-3" />}
-                <Folder className="h-3.5 w-3.5 text-violet-400" />
-                <span className="text-xs">{folder.name}</span>
-                <span className="text-[10px] text-muted-foreground ml-auto">{folder.fileCount}</span>
-            </button>
-            {expanded.has(folder.path) && folder.children.map(c => renderFolder(c, depth + 1))}
-        </div>
-    );
-
-    if (!loaded) return null;
-
-    return (
-        <div className="glass-card rounded-2xl p-5">
-            <div className="flex items-center gap-2 mb-3">
-                <Folder className="h-4 w-4 text-violet-400" />
-                <span className="text-sm font-medium">Vault 结构</span>
-                <span className="text-xs text-muted-foreground ml-auto">{structure.length} 个顶层目录</span>
-            </div>
-            <div className="max-h-[300px] overflow-y-auto space-y-0.5">
-                {structure.map(f => renderFolder(f))}
-            </div>
-            <div className="mt-3 p-3 rounded-xl bg-violet-500/5 border border-violet-500/10">
-                <p className="text-[11px] text-violet-300">
-                    💡 <strong>提示</strong>：在上方指令框输入「帮我分析文件夹结构，生成看板面板」，Claude 会根据你的目录结构生成个性化的导航面板
-                </p>
-            </div>
-        </div>
-    );
-}
-
 // ─── Main Agent Panel ───
 
-export function AgentPanel({ vaultPath, claudeMd }: AgentPanelProps) {
+export function AgentPanel({ vaultPath, claudeMd, onRebind }: AgentPanelProps) {
     return (
         <div className="space-y-5 stagger-children">
-            <CommandInput vaultPath={vaultPath} />
+            <CommandInput vaultPath={vaultPath} onRebind={onRebind} />
             <ClaudeMdCard content={claudeMd} />
-            <VaultStructure vaultPath={vaultPath} />
             <SkillsLibrary />
         </div>
     );
